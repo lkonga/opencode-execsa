@@ -1,7 +1,7 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule, TuiDialogSelectOption } from "@opencode-ai/plugin/tui"
 import { spawnSync } from "node:child_process"
 
-type SettingKey = "enabled" | "model" | "prompt_style" | "temperature" | "steps" | "provider_whitelist" | "nudge_enabled" | "allow_external_dir"
+type SettingKey = "enabled" | "model" | "provider_whitelist" | "reminder" | "prompt_style" | "temperature" | "steps" | "nudge_enabled" | "always_extend" | "allow_external_dir"
 
 const DEFAULTS: Record<SettingKey, string> = {
   enabled: "true",
@@ -10,18 +10,21 @@ const DEFAULTS: Record<SettingKey, string> = {
   temperature: "0",
   steps: "15",
   provider_whitelist: "",
+  reminder: "true",
   nudge_enabled: "false",
+  always_extend: "false",
   allow_external_dir: "true",
 }
 
 const SETTINGS: Array<{ key: SettingKey; label: string; type: "toggle" | "model" | "select" | "text"; options?: string[] }> = [
   { key: "enabled", label: "Execsa enabled", type: "toggle" },
   { key: "model", label: "Model", type: "model" },
+  { key: "reminder", label: "Extra Reminder", type: "toggle" },
   { key: "prompt_style", label: "Prompt style", type: "select", options: ["Strict", "Default (soft)"] },
   { key: "temperature", label: "Temperature", type: "text" },
   { key: "steps", label: "Max steps", type: "text" },
-  { key: "provider_whitelist", label: "Model providers", type: "text" },
   { key: "nudge_enabled", label: "Last-turn nudge", type: "toggle" },
+  { key: "always_extend", label: "Always extend steps", type: "toggle" },
   { key: "allow_external_dir", label: "Allow external dirs", type: "toggle" },
 ]
 
@@ -190,14 +193,13 @@ function showHelp(api: TuiPluginApi): void {
 function showSettings(api: TuiPluginApi): void {
   const helpOption: TuiDialogSelectOption<string> = { title: "Help", value: "help", category: "Navigation" }
   const options: TuiDialogSelectOption<string>[] = [
-    helpOption,
-    { title: "Edit prompt file", value: "edit_prompt", category: "Navigation" },
     ...SETTINGS.map((s) => {
       const val = get(api, s.key)
       const display = s.type === "toggle" ? (val === "true" ? "ON" : "OFF") : val
       return { title: `${s.label}: ${display}`, value: s.key, description: s.type === "toggle" ? "Toggle ON/OFF" : "Tap to edit" }
     }),
-    { title: "Close", value: "close", category: "Navigation" },
+    { title: "Edit prompt file", value: "edit_prompt", category: "Navigation" },
+    helpOption,
   ]
 
   api.ui.dialog.setSize("medium")
@@ -211,7 +213,6 @@ function showSettings(api: TuiPluginApi): void {
 }
 
 function handleSelect(api: TuiPluginApi, value: string): void {
-  if (value === "close") { api.ui.dialog.clear(); return }
   if (value === "help") { showHelp(api); return }
   if (value === "edit_prompt") { editPromptFile(api); return }
 
@@ -235,6 +236,7 @@ function handleSelect(api: TuiPluginApi, value: string): void {
     api.ui.dialog.replace(() =>
       api.ui.DialogSelect({
         title: "Execsa Model",
+        placeholder: "Search models...",
         options: opts,
         current,
         onSelect: (opt) => {
