@@ -13,7 +13,7 @@ const DEFAULTS: Record<SettingKey, string> = {
   reminder: "true",
   nudge_enabled: "false",
   always_extend: "false",
-  allow_external_dir: "true",
+  allow_external_dir: "false",
 }
 
 const SETTINGS: Array<{ key: SettingKey; label: string; type: "toggle" | "model" | "select" | "text"; options?: string[] }> = [
