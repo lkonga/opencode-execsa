@@ -1,7 +1,7 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule, TuiDialogSelectOption } from "@opencode-ai/plugin/tui"
 import { spawnSync } from "node:child_process"
 
-type SettingKey = "enabled" | "model" | "prompt_style" | "temperature" | "steps" | "provider_whitelist" | "nudge_enabled"
+type SettingKey = "enabled" | "model" | "prompt_style" | "temperature" | "steps" | "provider_whitelist" | "nudge_enabled" | "allow_external_dir"
 
 const DEFAULTS: Record<SettingKey, string> = {
   enabled: "true",
@@ -11,6 +11,7 @@ const DEFAULTS: Record<SettingKey, string> = {
   steps: "15",
   provider_whitelist: "",
   nudge_enabled: "false",
+  allow_external_dir: "true",
 }
 
 const SETTINGS: Array<{ key: SettingKey; label: string; type: "toggle" | "model" | "select" | "text"; options?: string[] }> = [
@@ -21,6 +22,7 @@ const SETTINGS: Array<{ key: SettingKey; label: string; type: "toggle" | "model"
   { key: "steps", label: "Max steps", type: "text" },
   { key: "provider_whitelist", label: "Model providers", type: "text" },
   { key: "nudge_enabled", label: "Last-turn nudge", type: "toggle" },
+  { key: "allow_external_dir", label: "Allow external dirs", type: "toggle" },
 ]
 
 const tui: TuiPlugin = async (api) => {
