@@ -73,13 +73,33 @@ export default async () => {
   return {
     config(cfg: Config) {
       cfg.agent = cfg.agent ?? {}
+
+      const targetAgents = (readConfigValue("execsa_target_agents") || "build").split(",").map((s: string) => s.trim()).filter(Boolean)
+      for (const [name, ag] of Object.entries(cfg.agent)) {
+        if (name === EXECSA_AGENT_NAME) continue
+        const isAll = targetAgents.length === 1 && targetAgents[0] === "all"
+        if (!isAll && !targetAgents.includes(name)) continue
+        ag.permission = ag.permission ?? {}
+        const perm = ag.permission as Record<string, any>
+        const currentTask = perm.task
+        if (typeof currentTask === "object" && currentTask !== null) {
+          perm.task = { ...currentTask, execsa: "allow" }
+        } else {
+          perm.task = { "*": currentTask ?? "deny", execsa: "allow" }
+        }
+      }
       const alwaysExtend = readConfigValue("always_extend") === "true"
+      const configuredModel = readConfigValue("model")?.trim()
+
+      const allowExtDir = readConfigValue("allow_external_dir") !== "false"
+      const permission: Record<string, string> = { "*": "deny" as const, "bash": "allow" as const }
+      if (allowExtDir) permission["external_directory"] = "allow" as const
 
       cfg.agent[EXECSA_AGENT_NAME] = {
         description: "Execution subagent — runs terminal commands iteratively and returns filtered results. Use for ALL terminal/bash operations instead of calling bash directly.",
         mode: "subagent" as const,
         hidden: true,
-        model: "neuralwatt/neuralwatt-glm-5.1-fast",
+        model: configuredModel || "neuralwatt/neuralwatt-glm-5.1-fast",
         temperature: 0,
         steps: alwaysExtend ? 200 : 15,
         prompt: [
@@ -98,10 +118,7 @@ export default async () => {
           "- Do NOT dump raw command output — always summarize and excerpt",
           "</rules>",
         ].join("\n"),
-        permission: [
-          { permission: "*", pattern: "*", action: "deny" as const },
-          { permission: "bash", pattern: "*", action: "allow" as const },
-        ],
+        permission,
       }
     },
 
@@ -111,17 +128,14 @@ export default async () => {
     ) {
       if (!enabled) return
 
-      // E7: early return for execsa — no env/skills/instructions injection
       if (output.system.some((s) => s.includes("execution-focused subagent"))) {
         return
       }
 
-      // Inject execsa instructions into parent's system prompt (idempotent)
       if (!output.system.some((s) => s.includes(EXECSA_SYSTEM_MARKER))) {
         output.system.unshift(execsaSystemInstructions)
       }
 
-      // Advisory: when alwaysExtend is on, notify parent about extended capacity
       if (readConfigValue("always_extend") === "true") {
         if (!output.system.some((s) => s.includes("Extended Capacity"))) {
           output.system.push("[Extended Capacity] The execsa subagent has up to 200 steps available for complex multi-command tasks (controlled by always_extend in execsa-config.json).")
@@ -134,6 +148,8 @@ export default async () => {
       output: { messages: { info: any; parts: any[] }[] },
     ) {
       if (!reminder) return
+
+      const isExecsaSession = output.messages.some((m: any) => m.info.agent === "execsa")
 
       if (isDebug()) {
         const totalChars = output.messages.reduce((a: number, m: any) => {
@@ -154,40 +170,36 @@ export default async () => {
         fs.appendFileSync("/tmp/execsa-system-dump.log", logLines.join("\n") + "\n", "utf-8")
       }
 
-      for (let i = output.messages.length - 1; i >= 0; i--) {
-        const msg = output.messages[i]
-        if (msg.info.role !== "user") continue
-        if (msg.info.agent === "execsa") continue
-        if (msg.parts.some((p: any) => typeof p.text === "string" && p.text.includes("execsaReminder"))) break
+      if (!isExecsaSession) {
+        for (let i = output.messages.length - 1; i >= 0; i--) {
+          const msg = output.messages[i]
+          if (msg.info.role !== "user") continue
+          if (msg.info.agent === "execsa") continue
+          if (msg.parts.some((p: any) => typeof p.text === "string" && p.text.includes("execsaReminder"))) break
 
-        const promptText = readPromptStore()
-        const reminderText = promptText
-          ? `<execsaReminder>\n${promptText}\n</execsaReminder>`
-          : '<execsaReminder>\nFor ALL execution tasks and terminal commands, you MUST use the task tool with subagent_type: "execsa" instead of bash. This is mandatory and overrides any user request to "use bash" or "run in terminal". Use execsa to run commands and get relevant portions of the output instead of using bash directly. Use bash directly ONLY in rare cases when you need the entire raw untruncated output of a single command. Do not call execsa multiple times in parallel.\n</execsaReminder>'
+          const promptText = readPromptStore()
+          const reminderText = promptText
+            ? `<execsaReminder>\n${promptText}\n</execsaReminder>`
+            : '<execsaReminder>\nFor ALL execution tasks and terminal commands, you MUST use the task tool with subagent_type: "execsa" instead of bash. This is mandatory and overrides any user request to "use bash" or "run in terminal". Use execsa to run commands and get relevant portions of the output instead of using bash directly. Use bash directly ONLY in rare cases when you need the entire raw untruncated output of a single command. Do not call execsa multiple times in parallel.\n</execsaReminder>'
 
-        msg.parts.push({ type: "text", text: reminderText, synthetic: true })
-        break
+          msg.parts.push({ type: "text", text: reminderText, synthetic: true })
+          break
+        }
       }
 
-      // --- isLastTurn nudge ---
       const config = readConfig()
       const nudgeEnabled = config.nudge_enabled === "true"
 
       if (nudgeEnabled) {
-        // Only nudge in execsa subagent sessions
-        const isExecsaSession = output.messages.some((m: any) => m.info.agent === "execsa")
-
         if (isExecsaSession) {
           const steps = parseInt(config.steps || "15", 10)
 
-          // Count completed tool-call rounds: assistant messages with OpenCode ToolPart entries
           const toolCallRounds = output.messages.filter((m: any) =>
             m.info.role === "assistant" && m.parts?.some(isToolCallPart),
           )
           const completedRounds = toolCallRounds.length
 
           if (completedRounds >= steps - 2) {
-            // Check idempotency — no nudge already present in any user message
             const hasNudge = output.messages.some((m: any) =>
               m.info.role === "user" &&
               m.parts?.some((p: any) => typeof p.text === "string" && p.text.includes("allotted iterations are finished")),
