@@ -1,7 +1,9 @@
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule, TuiDialogSelectOption } from "@opencode-ai/plugin/tui"
-import { spawnSync } from "node:child_process"
+import { spawnSync, execSync } from "node:child_process"
+import { fileURLToPath } from "node:url"
+import { dirname } from "node:path"
 
-type SettingKey = "enabled" | "model" | "provider_whitelist" | "reminder" | "prompt_style" | "temperature" | "steps" | "nudge_enabled" | "always_extend" | "allow_external_dir"
+type SettingKey = "enabled" | "model" | "provider_whitelist" | "reminder" | "prompt_style" | "temperature" | "steps" | "nudge_enabled" | "always_extend" | "allow_external_dir" | "execsa_target_agents"
 
 const DEFAULTS: Record<SettingKey, string> = {
   enabled: "true",
@@ -13,7 +15,19 @@ const DEFAULTS: Record<SettingKey, string> = {
   reminder: "true",
   nudge_enabled: "false",
   always_extend: "false",
-  allow_external_dir: "false",
+  allow_external_dir: "true",
+  execsa_target_agents: "build",
+}
+
+const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
+let _version: string | null = null
+function getVersion(): string {
+  if (_version) return _version
+  try {
+    const out = execSync("git -C " + PLUGIN_DIR + " rev-parse --short HEAD 2>/dev/null || echo ?", { encoding: "utf-8", timeout: 3000 }).trim()
+    _version = out.slice(0, 9)
+  } catch { _version = "?" }
+  return _version
 }
 
 const SETTINGS: Array<{ key: SettingKey; label: string; type: "toggle" | "model" | "select" | "text"; options?: string[] }> = [
@@ -25,6 +39,7 @@ const SETTINGS: Array<{ key: SettingKey; label: string; type: "toggle" | "model"
   { key: "steps", label: "Max steps", type: "text" },
   { key: "nudge_enabled", label: "Last-turn nudge", type: "toggle" },
   { key: "always_extend", label: "Always extend steps", type: "toggle" },
+  { key: "execsa_target_agents", label: "Target agents", type: "text", default: "build" },
   { key: "allow_external_dir", label: "Allow external dirs", type: "toggle" },
 ]
 
@@ -54,6 +69,50 @@ const EXECSA_PROMPT_PATH = require("path").join(
 export function parseEditorCommand(editor: string): string[] {
   return (editor.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [])
     .map((part) => part.replace(/^(["'])(.*)\1$/, "$2"))
+}
+
+function editConfigFile(api: TuiPluginApi): void {
+  const editor = process.env.VISUAL || process.env.EDITOR
+  if (!editor) {
+    api.ui.toast({ variant: "error", message: "Set VISUAL or EDITOR to edit Execsa config" })
+    api.command.trigger("execsa.show")
+    return
+  }
+
+  const parts = parseEditorCommand(editor)
+  if (parts.length === 0) {
+    api.ui.toast({ variant: "error", message: "Invalid editor command" })
+    api.command.trigger("execsa.show")
+    return
+  }
+
+  try {
+    const fs = require("fs")
+    const path = require("path")
+    fs.mkdirSync(path.dirname(EXECSA_CONFIG_PATH), { recursive: true })
+    if (!fs.existsSync(EXECSA_CONFIG_PATH)) {
+      fs.writeFileSync(EXECSA_CONFIG_PATH, "{}", "utf-8")
+    }
+
+    const [cmd, ...args] = parts
+    const result = spawnSync(cmd, [...args, EXECSA_CONFIG_PATH], {
+      stdio: "inherit",
+      shell: process.platform === "win32",
+    })
+
+    if (result.error) {
+      api.ui.toast({ variant: "error", message: `Editor failed: ${result.error.message}` })
+    } else if (result.status !== 0) {
+      const reason = result.signal ? `signal ${result.signal}` : `exit ${result.status}`
+      api.ui.toast({ variant: "error", message: `Editor failed: ${reason}` })
+    } else {
+      api.ui.toast({ variant: "success", message: "Execsa config updated" })
+    }
+  } catch (err: any) {
+    api.ui.toast({ variant: "error", message: `Editor failed: ${err?.message ?? String(err)}` })
+  }
+
+  api.command.trigger("execsa.show")
 }
 
 function editPromptFile(api: TuiPluginApi): void {
@@ -109,11 +168,71 @@ function writeConfig(api: TuiPluginApi, key: string, val: string): void {
 }
 
 function get(api: TuiPluginApi, key: SettingKey): string {
-  return (api.kv.get(key) as string) ?? DEFAULTS[key]
+  const kv = api.kv.get(key) as string | undefined
+  if (kv && kv !== DEFAULTS[key]) return kv
+  try {
+    const cfg = JSON.parse(require("fs").readFileSync(EXECSA_CONFIG_PATH, "utf-8"))
+    if (cfg[key] !== undefined) return String(cfg[key])
+  } catch {}
+  return kv ?? DEFAULTS[key]
 }
 
 function set(api: TuiPluginApi, key: SettingKey, val: string): void {
   writeConfig(api, key, val)
+}
+
+const KNOWN_AGENTS = [
+  "build", "general", "plan",
+  "coder", "coderJunior", "coderAssistant",
+  "explore", "exploreSyn", "exploreZai",
+  "expert", "reviewer", "quickReviewer",
+  "summarizer", "deployer", "repositoryAnalyst",
+]
+
+function showTargetAgentsDialog(api: TuiPluginApi): void {
+  const current = get(api, "execsa_target_agents")
+  const selected = current.split(",").map((s) => s.trim()).filter(Boolean)
+  const isAll = selected.length === 1 && selected[0] === "all"
+
+  const opts: TuiDialogSelectOption<string>[] = KNOWN_AGENTS.map((name) => ({
+    title: name + (isAll || selected.includes(name) ? " : ON" : " : OFF"),
+    value: name,
+    category: "Agents",
+    description: isAll ? "all selected" : undefined,
+  }))
+
+  opts.push({ title: "All agents (wildcard)", value: "__all__", category: "Special" })
+  opts.push({ title: isAll ? "← Back" : "Done", value: "__done__", category: "Navigation" })
+
+  api.ui.dialog.setSize("medium")
+  api.ui.dialog.replace(() =>
+    api.ui.DialogSelect({
+      title: "Execsa target agents",
+      options: opts,
+      onSelect: (opt) => {
+        if (!opt) return
+        if (opt.value === "__done__") { api.command.trigger("execsa.show"); return }
+
+        if (opt.value === "__all__") {
+          set(api, "execsa_target_agents", "all")
+          api.ui.toast({ variant: "success", message: "target agents: all" })
+          api.command.trigger("execsa.show")
+          return
+        }
+
+        let newSelected: string[]
+        if (isAll) {
+          newSelected = KNOWN_AGENTS.filter((a) => a !== opt.value)
+        } else if (selected.includes(opt.value)) {
+          newSelected = selected.filter((a) => a !== opt.value)
+        } else {
+          newSelected = [...selected, opt.value]
+        }
+        set(api, "execsa_target_agents", newSelected.join(",") || "build")
+        showTargetAgentsDialog(api)
+      },
+    }),
+  )
 }
 
 export function buildModelOptions(
@@ -199,13 +318,14 @@ function showSettings(api: TuiPluginApi): void {
       return { title: `${s.label}: ${display}`, value: s.key, description: s.type === "toggle" ? "Toggle ON/OFF" : "Tap to edit" }
     }),
     { title: "Edit prompt file", value: "edit_prompt", category: "Navigation" },
+    { title: "Edit config file", value: "edit_config", category: "Navigation" },
     helpOption,
   ]
 
   api.ui.dialog.setSize("medium")
   api.ui.dialog.replace(() =>
     api.ui.DialogSelect({
-      title: "Execsa settings",
+      title: "Execsa settings (" + getVersion() + ")",
       options,
       onSelect: (opt) => handleSelect(api, opt!.value),
     }),
@@ -215,6 +335,7 @@ function showSettings(api: TuiPluginApi): void {
 function handleSelect(api: TuiPluginApi, value: string): void {
   if (value === "help") { showHelp(api); return }
   if (value === "edit_prompt") { editPromptFile(api); return }
+  if (value === "edit_config") { editConfigFile(api); return }
 
   const s = SETTINGS.find((x) => x.key === value)
   if (!s) return
@@ -272,6 +393,11 @@ function handleSelect(api: TuiPluginApi, value: string): void {
         },
       }),
     )
+    return
+  }
+
+  if (s.key === "execsa_target_agents") {
+    showTargetAgentsDialog(api)
     return
   }
 
