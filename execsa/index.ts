@@ -74,6 +74,20 @@ export default async () => {
     config(cfg: Config) {
       cfg.agent = cfg.agent ?? {}
 
+      const targetAgents = (readConfigValue("execsa_target_agents") || "build").split(",").map((s: string) => s.trim()).filter(Boolean)
+      for (const [name, ag] of Object.entries(cfg.agent)) {
+        if (name === EXECSA_AGENT_NAME) continue
+        const isAll = targetAgents.length === 1 && targetAgents[0] === "all"
+        if (!isAll && !targetAgents.includes(name)) continue
+        ag.permission = ag.permission ?? {}
+        const perm = ag.permission as Record<string, any>
+        const currentTask = perm.task
+        if (typeof currentTask === "object" && currentTask !== null) {
+          perm.task = { ...currentTask, execsa: "allow" }
+        } else {
+          perm.task = { "*": currentTask ?? "deny", execsa: "allow" }
+        }
+      }
       const alwaysExtend = readConfigValue("always_extend") === "true"
       const configuredModel = readConfigValue("model")?.trim()
 
