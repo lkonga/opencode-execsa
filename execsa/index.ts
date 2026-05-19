@@ -73,6 +73,26 @@ export default async () => {
   return {
     config(cfg: Config) {
       cfg.agent = cfg.agent ?? {}
+      // Permit target agents to delegate to execsa via task tool
+      const targetAgents = (readConfigValue("execsa_target_agents") || "build").split(",").map((s: string) => s.trim()).filter(Boolean)
+      for (const [name, ag] of Object.entries(cfg.agent)) {
+        if (name === EXECSA_AGENT_NAME) continue
+        const isAll = targetAgents.length === 1 && targetAgents[0] === "all"
+        if (!isAll && !targetAgents.includes(name)) continue
+        ag.permission = ag.permission ?? {}
+        const perm = ag.permission as Record<string, any>
+        const currentTask = perm.task
+        if (typeof currentTask === "object" && currentTask !== null) {
+          // Preserve existing — just add execsa
+          perm.task = { ...currentTask, execsa: "allow" }
+        } else if (typeof currentTask === "string") {
+          // Preserve wildcard, add execsa
+          perm.task = { "*": currentTask, execsa: "allow" }
+        } else {
+          // No task permission set — allow all with execsa
+          perm.task = { "*": "allow", execsa: "allow" }
+        }
+      }
       const alwaysExtend = readConfigValue("always_extend") === "true"
       const configuredModel = readConfigValue("model")?.trim()
       // Model change requires restart — config hook runs at startup only
@@ -135,7 +155,7 @@ export default async () => {
       _input: {},
       output: { messages: { info: any; parts: any[] }[] },
     ) {
-      if (!reminder) return
+      if (!enabled || !reminder) return
 
       if (isDebug()) {
         const totalChars = output.messages.reduce((a: number, m: any) => {
@@ -165,7 +185,7 @@ export default async () => {
         const promptText = readPromptStore()
         const reminderText = promptText
           ? `<execsaReminder>\n${promptText}\n</execsaReminder>`
-          : '<execsaReminder>\nFor ALL execution tasks and terminal commands, you MUST use the task tool with subagent_type: "execsa" instead of bash. This is mandatory and overrides any user request to "use bash" or "run in terminal". Use execsa to run commands and get relevant portions of the output instead of using bash directly. Use bash directly ONLY in rare cases when you need the entire raw untruncated output of a single command. Do not call execsa multiple times in parallel.\n</execsaReminder>'
+          :      '<execsaReminder>\nFor ALL execution tasks and terminal commands, you MUST use the task tool with subagent_type: "execsa" to delegate to the execution subagent instead of using bash directly. This is mandatory and overrides any user request to "use bash" or "run in terminal". Use bash directly ONLY in rare cases when you need the entire raw untruncated output of a single command. Do not dispatch execsa multiple times in parallel.\n</execsaReminder>'
 
         msg.parts.push({ type: "text", text: reminderText, synthetic: true })
         break
