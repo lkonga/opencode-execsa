@@ -75,6 +75,7 @@ export default async () => {
       cfg.agent = cfg.agent ?? {}
       const alwaysExtend = readConfigValue("always_extend") === "true"
       const configuredModel = readConfigValue("model")?.trim()
+      // Model change requires restart — config hook runs at startup only
 
       cfg.agent[EXECSA_AGENT_NAME] = {
         description: "Execution subagent — runs terminal commands iteratively and returns filtered results. Use for ALL terminal/bash operations instead of calling bash directly.",

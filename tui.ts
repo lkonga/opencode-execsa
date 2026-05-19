@@ -362,8 +362,8 @@ function handleSelect(api: TuiPluginApi, value: string): void {
         current,
         onSelect: (opt) => {
           if (opt!.value === "cancel") { api.command.trigger("execsa.show"); return }
-          set(api, "model", opt!.value)
-          api.ui.toast({ variant: "success", message: `Model: ${opt!.value}` })
+           set(api, "model", opt!.value)
+          api.ui.toast({ variant: "success", message: `Model: ${opt!.value} — restart to apply` })
           api.command.trigger("execsa.show")
         },
       }),
