@@ -74,12 +74,13 @@ export default async () => {
     config(cfg: Config) {
       cfg.agent = cfg.agent ?? {}
       const alwaysExtend = readConfigValue("always_extend") === "true"
+      const configuredModel = readConfigValue("model")?.trim()
 
       cfg.agent[EXECSA_AGENT_NAME] = {
         description: "Execution subagent — runs terminal commands iteratively and returns filtered results. Use for ALL terminal/bash operations instead of calling bash directly.",
         mode: "subagent" as const,
         hidden: true,
-        model: "neuralwatt/neuralwatt-glm-5.1-fast",
+        model: configuredModel || "neuralwatt/neuralwatt-glm-5.1-fast",
         temperature: 0,
         steps: alwaysExtend ? 200 : 15,
         prompt: [
