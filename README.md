@@ -20,7 +20,7 @@ OpenCode plugin: execsa subagent TUI controls, configuration, and system instruc
 
 ```json
 {
-  "plugin": ["opencode-execsa"]
+  "plugin": ["@lkonga/opencode-execsa"]
 }
 ```
 
@@ -28,7 +28,7 @@ If you want the `/execsa` TUI command, also add to `tui.json`:
 
 ```json
 {
-  "plugin": ["opencode-execsa"]
+  "plugin": ["@lkonga/opencode-execsa"]
 }
 ```
 
