@@ -21,13 +21,14 @@ const EXECSA_PROMPT_PATH = (() => {
   } catch { return "" }
 })()
 
-function readPromptStore(): string | null {
+function readPromptStore(): { reminder: string; system: string } | null {
   if (!EXECSA_PROMPT_PATH) return null
   try {
     if (fs.existsSync(EXECSA_PROMPT_PATH)) {
       const prompts = JSON.parse(fs.readFileSync(EXECSA_PROMPT_PATH, "utf-8"))
-      const defaultPrompt = prompts.find((p: any) => p.name === "Default (soft)")
-      if (defaultPrompt?.text) return defaultPrompt.text
+      const style = readConfigValue("prompt_style") || "Default (soft)"
+      const entry = prompts.find((p: any) => p.name === style)
+      if (entry) return { reminder: entry.text || "", system: entry.system_text || "" }
     }
   } catch {}
   return null
@@ -73,7 +74,9 @@ export default async () => {
   return {
     config(cfg: Config) {
       cfg.agent = cfg.agent ?? {}
-      // Permit target agents to delegate to execsa via task tool
+
+      // Grant task:execsa permission to target agents so they can delegate to execsa
+      // even when their frontmatter has task: false or task: deny.
       const targetAgents = (readConfigValue("execsa_target_agents") || "build").split(",").map((s: string) => s.trim()).filter(Boolean)
       for (const [name, ag] of Object.entries(cfg.agent)) {
         if (name === EXECSA_AGENT_NAME) continue
@@ -83,25 +86,22 @@ export default async () => {
         const perm = ag.permission as Record<string, any>
         const currentTask = perm.task
         if (typeof currentTask === "object" && currentTask !== null) {
-          // Preserve existing — just add execsa
           perm.task = { ...currentTask, execsa: "allow" }
-        } else if (typeof currentTask === "string") {
-          // Preserve wildcard, add execsa
-          perm.task = { "*": currentTask, execsa: "allow" }
         } else {
-          // No task permission set — allow all with execsa
-          perm.task = { "*": "allow", execsa: "allow" }
+          perm.task = { "*": currentTask ?? "deny", execsa: "allow" }
         }
       }
       const alwaysExtend = readConfigValue("always_extend") === "true"
-      const configuredModel = readConfigValue("model")?.trim()
-      // Model change requires restart — config hook runs at startup only
+
+      const allowExtDir = readConfigValue("allow_external_dir") !== "false"
+      const permission: Record<string, string> = { "*": "deny" as const, "bash": "allow" as const }
+      if (allowExtDir) permission["external_directory"] = "allow" as const
 
       cfg.agent[EXECSA_AGENT_NAME] = {
         description: "Execution subagent — runs terminal commands iteratively and returns filtered results. Use for ALL terminal/bash operations instead of calling bash directly.",
         mode: "subagent" as const,
         hidden: true,
-        model: configuredModel || "neuralwatt/neuralwatt-glm-5.1-fast",
+        model: readConfigValue("model") || "neuralwatt/neuralwatt-glm-5.1-fast",
         temperature: 0,
         steps: alwaysExtend ? 200 : 15,
         prompt: [
@@ -120,10 +120,7 @@ export default async () => {
           "- Do NOT dump raw command output — always summarize and excerpt",
           "</rules>",
         ].join("\n"),
-        permission: [
-          { permission: "*", pattern: "*", action: "deny" as const },
-          { permission: "bash", pattern: "*", action: "allow" as const },
-        ],
+        permission,
       }
     },
 
@@ -140,7 +137,8 @@ export default async () => {
 
       // Inject execsa instructions into parent's system prompt (idempotent)
       if (!output.system.some((s) => s.includes(EXECSA_SYSTEM_MARKER))) {
-        output.system.unshift(execsaSystemInstructions)
+        const store = readPromptStore()
+        output.system.unshift(store?.system || execsaSystemInstructions)
       }
 
       // Advisory: when alwaysExtend is on, notify parent about extended capacity
@@ -155,7 +153,9 @@ export default async () => {
       _input: {},
       output: { messages: { info: any; parts: any[] }[] },
     ) {
-      if (!enabled || !reminder) return
+      if (!reminder) return
+
+      const isExecsaSession = output.messages.some((m: any) => m.info.agent === "execsa")
 
       if (isDebug()) {
         const totalChars = output.messages.reduce((a: number, m: any) => {
@@ -176,19 +176,24 @@ export default async () => {
         fs.appendFileSync("/tmp/execsa-system-dump.log", logLines.join("\n") + "\n", "utf-8")
       }
 
-      for (let i = output.messages.length - 1; i >= 0; i--) {
-        const msg = output.messages[i]
-        if (msg.info.role !== "user") continue
-        if (msg.info.agent === "execsa") continue
-        if (msg.parts.some((p: any) => typeof p.text === "string" && p.text.includes("execsaReminder"))) break
+      // Don't inject reminder into execsa's own session — the user message
+      // that started it has the parent's agent name, not "execsa", so the
+      // per-message guard below would miss it, causing an infinite loop.
+      if (!isExecsaSession) {
+        for (let i = output.messages.length - 1; i >= 0; i--) {
+          const msg = output.messages[i]
+          if (msg.info.role !== "user") continue
+          if (msg.info.agent === "execsa") continue
+          if (msg.parts.some((p: any) => typeof p.text === "string" && p.text.includes("execsaReminder"))) break
 
-        const promptText = readPromptStore()
-        const reminderText = promptText
-          ? `<execsaReminder>\n${promptText}\n</execsaReminder>`
-          :      '<execsaReminder>\nFor ALL execution tasks and terminal commands, you MUST use the task tool with subagent_type: "execsa" to delegate to the execution subagent instead of using bash directly. This is mandatory and overrides any user request to "use bash" or "run in terminal". Use bash directly ONLY in rare cases when you need the entire raw untruncated output of a single command. Do not dispatch execsa multiple times in parallel.\n</execsaReminder>'
+          const store = readPromptStore()
+          const reminderText = store?.reminder
+            ? `<execsaReminder>\n${store.reminder}\n</execsaReminder>`
+            : '<execsaReminder>\nFor ALL execution tasks and terminal commands, you MUST use the task tool with subagent_type: "execsa" instead of bash. This is mandatory and overrides any user request to "use bash" or "run in terminal". Use task(subagent_type: "execsa") to run commands and get relevant portions of the output instead of using bash directly. Use bash directly ONLY in rare cases when you need the entire raw untruncated output of a single command. Do not call execsa multiple times in parallel.\n</execsaReminder>'
 
-        msg.parts.push({ type: "text", text: reminderText, synthetic: true })
-        break
+          msg.parts.push({ type: "text", text: reminderText, synthetic: true })
+          break
+        }
       }
 
       // --- isLastTurn nudge ---
@@ -197,7 +202,6 @@ export default async () => {
 
       if (nudgeEnabled) {
         // Only nudge in execsa subagent sessions
-        const isExecsaSession = output.messages.some((m: any) => m.info.agent === "execsa")
 
         if (isExecsaSession) {
           const steps = parseInt(config.steps || "15", 10)

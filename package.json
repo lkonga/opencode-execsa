@@ -1,6 +1,6 @@
 {
-  "name": "opencode-execsa-tui",
-  "version": "1.0.0",
+  "name": "opencode-execsa",
+  "version": "1.1.0",
   "description": "OpenCode plugin: execsa subagent TUI controls and configuration",
   "type": "module",
   "main": "./tui.ts",
