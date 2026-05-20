@@ -18,7 +18,13 @@ OpenCode plugin: execsa subagent TUI controls, configuration, and system instruc
 
 ### npm (recommended)
 
-Add to your `opencode.json`:
+```json
+{
+  "plugin": ["opencode-execsa"]
+}
+```
+
+If you want the `/execsa` TUI command, also add to `tui.json`:
 
 ```json
 {
@@ -26,7 +32,9 @@ Add to your `opencode.json`:
 }
 ```
 
-### Local file path
+### Local file path (npm not desired)
+
+If you don't want to install with npm, use `file://` paths. Add to `opencode.json`:
 
 ```json
 {
@@ -34,13 +42,11 @@ Add to your `opencode.json`:
 }
 ```
 
-### TUI plugin
-
-For the `/execsa` settings command, add to your `tui.json`:
+And to `tui.json` for the `/execsa` TUI command:
 
 ```json
 {
-  "plugin": ["/path/to/opencode-execsa/tui.ts"]
+  "plugin": ["file:///path/to/opencode-execsa/tui.ts"]
 }
 ```
 
