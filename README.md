@@ -44,9 +44,9 @@ For the `/execsa` settings command, add to your `tui.json`:
 }
 ```
 
-## Configuration
+## Configuration (optional)
 
-Create `execsa-config.json` in your OpenCode config directory:
+The plugin works with defaults out of the box. To customize, create `execsa-config.json` in your OpenCode config directory or use the `/execsa` TUI command:
 
 ```json
 {
