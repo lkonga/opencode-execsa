@@ -85,10 +85,14 @@ export default async () => {
         ag.permission = ag.permission ?? {}
         const perm = ag.permission as Record<string, any>
         const currentTask = perm.task
-        if (typeof currentTask === "object" && currentTask !== null) {
+        if (currentTask === undefined) {
+          // No task restriction existed — just add execsa:allow without blocking other agents
+          perm.task = { execsa: "allow" }
+        } else if (typeof currentTask === "object" && currentTask !== null) {
           perm.task = { ...currentTask, execsa: "allow" }
         } else {
-          perm.task = { "*": currentTask ?? "deny", execsa: "allow" }
+          // currentTask is a string like "allow" / "deny" — preserve it, add execsa
+          perm.task = { "*": currentTask, execsa: "allow" }
         }
       }
       const alwaysExtend = readConfigValue("always_extend") === "true"
