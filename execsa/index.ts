@@ -86,8 +86,8 @@ export default async () => {
         const perm = ag.permission as Record<string, any>
         const currentTask = perm.task
         if (currentTask === undefined) {
-          // No task restriction existed — just add execsa:allow without blocking other agents
-          perm.task = { execsa: "allow" }
+          // No task restriction existed — allow-all by default, just add execsa explicitly
+          perm.task = { "*": "allow", execsa: "allow" }
         } else if (typeof currentTask === "object" && currentTask !== null) {
           perm.task = { ...currentTask, execsa: "allow" }
         } else {
