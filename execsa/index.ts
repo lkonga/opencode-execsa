@@ -68,15 +68,14 @@ function isToolCallPart(part: any): boolean {
 }
 
 export default async () => {
-  const cfg = readExecsaConfig()
-  const enabled = cfg.enabled !== "false"
-  const reminder = cfg.reminder !== "false"
   return {
     config(cfg: Config) {
+      const config = readExecsaConfig()
+      const enabled = config.enabled !== "false"
+      if (!enabled) return
+
       cfg.agent = cfg.agent ?? {}
 
-      // Grant task:execsa permission to target agents so they can delegate to execsa
-      // even when their frontmatter has task: false or task: deny.
       const targetAgents = (readConfigValue("execsa_target_agents") || "build").split(",").map((s: string) => s.trim()).filter(Boolean)
       for (const [name, ag] of Object.entries(cfg.agent)) {
         if (name === EXECSA_AGENT_NAME) continue
@@ -86,12 +85,10 @@ export default async () => {
         const perm = ag.permission as Record<string, any>
         const currentTask = perm.task
         if (currentTask === undefined) {
-          // No task restriction existed — allow-all by default, just add execsa explicitly
           perm.task = { "*": "allow", execsa: "allow" }
         } else if (typeof currentTask === "object" && currentTask !== null) {
           perm.task = { ...currentTask, execsa: "allow" }
         } else {
-          // currentTask is a string like "allow" / "deny" — preserve it, add execsa
           perm.task = { "*": currentTask, execsa: "allow" }
         }
       }
@@ -132,7 +129,7 @@ export default async () => {
       _input: { sessionID?: string; model: Model },
       output: { system: string[] },
     ) {
-      if (!enabled) return
+      if (readExecsaConfig().enabled === "false") return
 
       // E7: early return for execsa — no env/skills/instructions injection
       if (output.system.some((s) => s.includes("execution-focused subagent"))) {
@@ -157,7 +154,7 @@ export default async () => {
       _input: {},
       output: { messages: { info: any; parts: any[] }[] },
     ) {
-      if (!reminder) return
+      if (readExecsaConfig().reminder === "false") return
 
       const isExecsaSession = output.messages.some((m: any) => m.info.agent === "execsa")
 
