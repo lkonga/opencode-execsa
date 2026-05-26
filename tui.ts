@@ -44,6 +44,15 @@ const SETTINGS: Array<{ key: SettingKey; label: string; type: "toggle" | "model"
 ]
 
 const tui: TuiPlugin = async (api) => {
+  // Deactivation: user toggled execsa OFF via Plugins dialog — disable server side too
+  api.lifecycle.onDispose(() => {
+    const cfg = readExecsaConfig()
+    if (cfg.enabled !== "false") {
+      writeExecsaConfigVal("enabled", "false")
+      void api.app.reload().catch(() => {})
+    }
+  })
+
   api.command.register(() => [
     {
       title: "Execsa Settings",
@@ -53,6 +62,20 @@ const tui: TuiPlugin = async (api) => {
       onSelect: () => showSettings(api),
     },
   ])
+}
+
+function readExecsaConfig(): Record<string, string> {
+  try { return JSON.parse(require("fs").readFileSync(EXECSA_CONFIG_PATH, "utf-8")) }
+  catch { return {} }
+}
+
+function writeExecsaConfigVal(key: string, val: string): void {
+  try {
+    const fs = require("fs")
+    const existing = fs.existsSync(EXECSA_CONFIG_PATH) ? JSON.parse(fs.readFileSync(EXECSA_CONFIG_PATH, "utf-8")) : {}
+    existing[key] = val
+    fs.writeFileSync(EXECSA_CONFIG_PATH, JSON.stringify(existing, null, 2), "utf-8")
+  } catch {}
 }
 
 const EXECSA_CONFIG_PATH = require("path").join(
@@ -344,6 +367,14 @@ function handleSelect(api: TuiPluginApi, value: string): void {
     const next = get(api, s.key as SettingKey) === "true" ? "false" : "true"
     set(api, s.key as SettingKey, next)
     api.ui.toast({ variant: "success", message: `Execsa ${next === "true" ? "enabled" : "disabled"}` })
+    if (s.key === "enabled") {
+      api.ui.dialog.clear()
+      api.command.trigger("execsa.show")
+      void api.app.reload().catch((err) => {
+        api.ui.toast({ variant: "error", message: `Execsa reload failed: ${err?.message ?? String(err)}` })
+      })
+      return
+    }
     api.command.trigger("execsa.show")
     return
   }
