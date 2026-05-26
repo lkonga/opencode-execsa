@@ -44,10 +44,18 @@ const SETTINGS: Array<{ key: SettingKey; label: string; type: "toggle" | "model"
 ]
 
 const tui: TuiPlugin = async (api) => {
+  // Activation: user toggled execsa ON via Plugins dialog — enable server side too
+  const cfg = readExecsaConfig()
+  if (cfg.enabled !== "true") {
+    writeExecsaConfigVal("enabled", "true")
+    void api.app.reload().catch(() => {})
+    return
+  }
+
   // Deactivation: user toggled execsa OFF via Plugins dialog — disable server side too
   api.lifecycle.onDispose(() => {
-    const cfg = readExecsaConfig()
-    if (cfg.enabled !== "false") {
+    const cfg2 = readExecsaConfig()
+    if (cfg2.enabled !== "false") {
       writeExecsaConfigVal("enabled", "false")
       void api.app.reload().catch(() => {})
     }
