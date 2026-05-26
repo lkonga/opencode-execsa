@@ -10,7 +10,7 @@ function writeConfig(overrides: Record<string, string> = {}) {
     path.join(FIXTURE_DIR, "execsa-config.json"),
     JSON.stringify({
       enabled: "false",
-      reminder: "false",
+      reminder: "true",
       always_extend: "false",
       allow_external_dir: "true",
       execsa_target_agents: "all",

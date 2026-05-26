@@ -76,7 +76,7 @@ export default async () => {
 
       cfg.agent = cfg.agent ?? {}
 
-      const targetAgents = (readConfigValue("execsa_target_agents") || "build").split(",").map((s: string) => s.trim()).filter(Boolean)
+      const targetAgents = (config.execsa_target_agents || "build").split(",").map((s: string) => s.trim()).filter(Boolean)
       for (const [name, ag] of Object.entries(cfg.agent)) {
         if (name === EXECSA_AGENT_NAME) continue
         const isAll = targetAgents.length === 1 && targetAgents[0] === "all"
@@ -129,7 +129,8 @@ export default async () => {
       _input: { sessionID?: string; model: Model },
       output: { system: string[] },
     ) {
-      if (readExecsaConfig().enabled === "false") return
+      const config = readExecsaConfig()
+      if (config.enabled === "false") return
 
       // E7: early return for execsa — no env/skills/instructions injection
       if (output.system.some((s) => s.includes("execution-focused subagent"))) {
@@ -154,7 +155,8 @@ export default async () => {
       _input: {},
       output: { messages: { info: any; parts: any[] }[] },
     ) {
-      if (readExecsaConfig().reminder === "false") return
+      const config = readExecsaConfig()
+      if (config.enabled === "false" || config.reminder === "false") return
 
       const isExecsaSession = output.messages.some((m: any) => m.info.agent === "execsa")
 
@@ -198,7 +200,6 @@ export default async () => {
       }
 
       // --- isLastTurn nudge ---
-      const config = readConfig()
       const nudgeEnabled = config.nudge_enabled === "true"
 
       if (nudgeEnabled) {
