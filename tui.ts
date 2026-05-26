@@ -188,23 +188,26 @@ function editPromptFile(api: TuiPluginApi): void {
 }
 
 function writeConfig(api: TuiPluginApi, key: string, val: string): void {
-  api.kv.set(key, val)
-  // Also persist to shared config file for the server plugin to read
+  // Write to config file FIRST (source of truth for server plugin)
   try {
     const fs = require("fs")
     const existing = fs.existsSync(EXECSA_CONFIG_PATH) ? JSON.parse(fs.readFileSync(EXECSA_CONFIG_PATH, "utf-8")) : {}
     existing[key] = val
     fs.writeFileSync(EXECSA_CONFIG_PATH, JSON.stringify(existing, null, 2), "utf-8")
   } catch {}
+  // Mirror to KV for settings UI fast read
+  api.kv.set(key, val)
 }
 
 function get(api: TuiPluginApi, key: SettingKey): string {
-  const kv = api.kv.get(key) as string | undefined
-  if (kv && kv !== DEFAULTS[key]) return kv
+  // Config file is authoritative — server plugin reads from it exclusively
   try {
     const cfg = JSON.parse(require("fs").readFileSync(EXECSA_CONFIG_PATH, "utf-8"))
     if (cfg[key] !== undefined) return String(cfg[key])
   } catch {}
+  // Fall back to KV (from previous writes) or defaults
+  const kv = api.kv.get(key) as string | undefined
+  if (kv && kv !== DEFAULTS[key]) return kv
   return kv ?? DEFAULTS[key]
 }
 
