@@ -91,12 +91,6 @@ const EXECSA_CONFIG_PATH = require("path").join(
   "execsa-config.json",
 )
 
-const EXECSA_AGENT_MD_PATH = require("path").join(
-  process.env.OPENCODE_CONFIG_DIR || require("path").join(require("os").homedir(), ".config", "opencode"),
-  "agents",
-  "execsa.md",
-)
-
 const EXECSA_PROMPT_PATH = require("path").join(
   process.env.OPENCODE_CONFIG_DIR || require("path").join(require("os").homedir(), ".config", "opencode"),
   "prompts",
@@ -195,21 +189,11 @@ function editPromptFile(api: TuiPluginApi): void {
 
 function writeConfig(api: TuiPluginApi, key: string, val: string): void {
   const fs = require("fs")
-  // Write to config file FIRST (source of truth for server plugin)
   try {
     const existing = fs.existsSync(EXECSA_CONFIG_PATH) ? JSON.parse(fs.readFileSync(EXECSA_CONFIG_PATH, "utf-8")) : {}
     existing[key] = val
     fs.writeFileSync(EXECSA_CONFIG_PATH, JSON.stringify(existing, null, 2), "utf-8")
   } catch {}
-  // Sync model to agent .md frontmatter when plugin is commented out
-  if (key === "model" && fs.existsSync(EXECSA_AGENT_MD_PATH)) {
-    try {
-      const content = fs.readFileSync(EXECSA_AGENT_MD_PATH, "utf-8")
-      const updated = content.replace(/^model:\s*.*$/m, `model: ${val}`)
-      fs.writeFileSync(EXECSA_AGENT_MD_PATH, updated, "utf-8")
-    } catch {}
-  }
-  // Mirror to KV for settings UI fast read
   api.kv.set(key, val)
 }
 
