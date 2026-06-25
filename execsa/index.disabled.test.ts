@@ -28,7 +28,7 @@ let hooks: any
 beforeAll(async () => {
   process.env.OPENCODE_CONFIG_DIR = FIXTURE_DIR
   writeConfig()
-  const mod = await import("./index.ts")
+  const mod = await import(`./index.ts?disabled=${FIXTURE_DIR}`)
   const pluginFactory = mod.default as () => Promise<any>
   hooks = await pluginFactory()
 })
@@ -39,7 +39,7 @@ afterAll(() => {
 })
 
 describe("execsa disabled (enabled=false)", () => {
-  it("config() returns immediately — no agent registered", () => {
+  it("config() does not register execsa agent", () => {
     const cfg = { agent: { build: { description: "Build", mode: "subagent" as const } } }
     hooks.config(cfg)
     expect((cfg.agent as any).execsa).toBeUndefined()
@@ -51,14 +51,32 @@ describe("execsa disabled (enabled=false)", () => {
     expect((cfg.agent as any).build.permission).toBeUndefined()
   })
 
-  it("system.transform does not inject execsaSystemInstructions", () => {
+  it("config() removes swap-injected execsa* agents when disabled", () => {
+    const cfg = {
+      agent: {
+        execsa: { description: "from swap", mode: "subagent" as const },
+        "execsa-ws": { description: "variant", mode: "subagent" as const },
+        build: {
+          description: "Build",
+          mode: "subagent" as const,
+          permission: { task: { "*": "allow", execsa: "allow" } },
+        },
+      },
+    }
+    hooks.config(cfg)
+    expect((cfg.agent as any).execsa).toBeUndefined()
+    expect((cfg.agent as any)["execsa-ws"]).toBeUndefined()
+    expect((cfg.agent as any).build.permission.task).toEqual({ "*": "allow" })
+  })
+
+  it("system.transform skips execsaSystemInstructions injection", () => {
     const output = { system: ["You are a helpful assistant."] }
     hooks["experimental.chat.system.transform"]({}, output)
     const hasMarker = output.system.some((s: string) => s.includes("<execsaSystemInstructions>"))
     expect(hasMarker).toBe(false)
   })
 
-  it("messages.transform does not inject execsaReminder", () => {
+  it("messages.transform skips execsaReminder injection", () => {
     const output = { messages: [{ info: { role: "user" }, parts: [{ type: "text", text: "hello" }] }] }
     hooks["experimental.chat.messages.transform"]({}, output)
     const hasReminder = output.messages[0].parts.some((p: any) =>
@@ -67,7 +85,7 @@ describe("execsa disabled (enabled=false)", () => {
     expect(hasReminder).toBe(false)
   })
 
-  it("chat.params still pins temperature for execsa agent (harmless — agent not registered)", () => {
+  it("chat.params still pins temperature for execsa agent", () => {
     const input = { sessionID: "s1", agent: "execsa", model: {}, provider: {}, message: {} }
     const output = { temperature: 0.7 }
     hooks["chat.params"](input, output)

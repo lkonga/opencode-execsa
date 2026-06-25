@@ -14,18 +14,30 @@ const execsaSystemInstructions = [
   "</execsaSystemInstructions>",
 ].join("\n")
 
-const EXECSA_PROMPT_PATH = (() => {
+function execsaConfigDir(): string {
   try {
-    const dir = process.env.OPENCODE_CONFIG_DIR || require("path").join(require("os").homedir(), ".config", "opencode")
-    return require("path").join(dir, "prompts", "execsa-prompts.json")
-  } catch { return "" }
-})()
+    return process.env.OPENCODE_CONFIG_DIR || require("path").join(require("os").homedir(), ".config", "opencode")
+  } catch {
+    return ""
+  }
+}
+
+function execsaConfigPath(): string {
+  const dir = execsaConfigDir()
+  return dir ? require("path").join(dir, "execsa-config.json") : ""
+}
+
+function execsaPromptPath(): string {
+  const dir = execsaConfigDir()
+  return dir ? require("path").join(dir, "prompts", "execsa-prompts.json") : ""
+}
 
 function readPromptStore(): { reminder: string; system: string } | null {
-  if (!EXECSA_PROMPT_PATH) return null
+  const promptPath = execsaPromptPath()
+  if (!promptPath) return null
   try {
-    if (fs.existsSync(EXECSA_PROMPT_PATH)) {
-      const prompts = JSON.parse(fs.readFileSync(EXECSA_PROMPT_PATH, "utf-8"))
+    if (fs.existsSync(promptPath)) {
+      const prompts = JSON.parse(fs.readFileSync(promptPath, "utf-8"))
       const style = readConfigValue("prompt_style") || "Default (soft)"
       const entry = prompts.find((p: any) => p.name === style)
       if (entry) return { reminder: entry.text || "", system: entry.system_text || "" }
@@ -34,21 +46,43 @@ function readPromptStore(): { reminder: string; system: string } | null {
   return null
 }
 
-const EXECSA_CONFIG_PATH = (() => {
-  try {
-    const dir = process.env.OPENCODE_CONFIG_DIR || require("path").join(require("os").homedir(), ".config", "opencode")
-    return require("path").join(dir, "execsa-config.json")
-  } catch { return "" }
-})()
-
 function readConfig(): Record<string, string> {
-  if (!EXECSA_CONFIG_PATH) return {}
+  const configPath = execsaConfigPath()
+  if (!configPath) return {}
   try {
-    if (fs.existsSync(EXECSA_CONFIG_PATH)) {
-      return JSON.parse(fs.readFileSync(EXECSA_CONFIG_PATH, "utf-8"))
+    if (fs.existsSync(configPath)) {
+      return JSON.parse(fs.readFileSync(configPath, "utf-8"))
     }
   } catch {}
   return {}
+}
+
+function isExecsaEnabled(config: Record<string, string> = readExecsaConfig()): boolean {
+  return config.enabled !== "false"
+}
+
+/** Remove swap/fork-registered execsa* agents and plugin-added task.execsa when disabled. */
+function teardownExecsa(cfg: Config) {
+  if (!cfg.agent) return
+  for (const name of Object.keys(cfg.agent)) {
+    if (name === EXECSA_AGENT_NAME || name.startsWith("execsa")) {
+      delete (cfg.agent as Record<string, unknown>)[name]
+      continue
+    }
+    const ag = cfg.agent[name]
+    if (!ag?.permission) continue
+    const perm = ag.permission as Record<string, unknown>
+    const task = perm.task
+    if (typeof task !== "object" || task === null || Array.isArray(task)) continue
+    const taskObj = { ...(task as Record<string, string>) }
+    if (!("execsa" in taskObj)) continue
+    delete taskObj.execsa
+    if (Object.keys(taskObj).length === 0) {
+      delete perm.task
+    } else {
+      perm.task = taskObj
+    }
+  }
 }
 
 function isDebug(): boolean {
@@ -71,8 +105,10 @@ export default async () => {
   return {
     config(cfg: Config) {
       const config = readExecsaConfig()
-      const enabled = config.enabled !== "false"
-      if (!enabled) return
+      if (!isExecsaEnabled(config)) {
+        teardownExecsa(cfg)
+        return
+      }
 
       cfg.agent = cfg.agent ?? {}
 
@@ -130,7 +166,7 @@ export default async () => {
       output: { system: string[] },
     ) {
       const config = readExecsaConfig()
-      if (config.enabled === "false") return
+      if (!isExecsaEnabled(config)) return
 
       // E7: early return for execsa — no env/skills/instructions injection
       if (output.system.some((s) => s.includes("execution-focused subagent"))) {
@@ -156,7 +192,7 @@ export default async () => {
       output: { messages: { info: any; parts: any[] }[] },
     ) {
       const config = readExecsaConfig()
-      if (config.enabled === "false" || config.reminder === "false") return
+      if (!isExecsaEnabled(config) || config.reminder === "false") return
 
       const isExecsaSession = output.messages.some((m: any) => m.info.agent === "execsa")
 

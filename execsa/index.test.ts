@@ -30,7 +30,7 @@ let hooks: { config: (cfg: any) => void }
 beforeAll(async () => {
   process.env.OPENCODE_CONFIG_DIR = FIXTURE_DIR
   writeConfig()
-  const mod = await import("./index.ts")
+  const mod = await import(`./index.ts?enabled=${FIXTURE_DIR}`)
   const pluginFactory = mod.default as () => Promise<typeof hooks>
   hooks = await pluginFactory()
 })
