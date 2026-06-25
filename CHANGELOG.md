@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.2.2 (2026-06-25)
+
+- **fix:** `teardownExecsa()` when `enabled=false` — remove swap-injected `execsa*` agents and `task.execsa` on parents
+- **fix:** resolve `execsa-config.json` / prompts path per read (not frozen at module import)
+- **test:** disabled suite isolated import; swap-injected agent teardown case
+
 ## v1.2.1 (2026-05-27)
 
 - **fix:** remove execsa.md frontmatter sync (deprecated — agent file disabled)
