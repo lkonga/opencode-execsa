@@ -44,14 +44,18 @@ const SETTINGS: Array<{ key: SettingKey; label: string; type: "toggle" | "model"
 ]
 
 const tui: TuiPlugin = async (api) => {
-  // Plugins dialog ON: sync execsa-config only if user did not canonically disable via opencode.jsonc
+  const canonOff = isExecsaCanonicallyDisabledInOpencodeJson()
   const cfg = readExecsaConfig()
-  if (cfg.enabled !== "true") {
-    if (!isExecsaCanonicallyDisabledInOpencodeJson()) {
-      writeExecsaConfigVal("enabled", "true")
-      void api.app.reload().catch(() => {})
-    }
-    return
+
+  // Plugins dialog ON: sync execsa-config only if not canonically disabled in opencode.jsonc
+  if (cfg.enabled !== "true" && !canonOff) {
+    writeExecsaConfigVal("enabled", "true")
+    void api.app.reload().catch(() => {})
+  } else if (cfg.enabled !== "true" && canonOff) {
+    api.ui.toast({
+      variant: "warning",
+      message: "Execsa blocked: agent.execsa.disable in opencode.jsonc — remove it to enable execsa",
+    })
   }
 
   // Deactivation: user toggled execsa OFF via Plugins dialog — disable server side too
@@ -79,13 +83,15 @@ function readOpencodeJsonAgentDisable(agent: string): boolean {
     const fs = require("fs")
     const path = require("path")
     const dir = process.env.OPENCODE_CONFIG_DIR || path.join(require("os").homedir(), ".config", "opencode")
+    const re = new RegExp(
+      `"${agent.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"\\s*:\\s*\\{[^}]*"disable"\\s*:\\s*true`,
+      "s",
+    )
     for (const name of ["opencode.jsonc", "opencode.json"]) {
       const p = path.join(dir, name)
       if (!fs.existsSync(p)) continue
       const raw = fs.readFileSync(p, "utf-8")
-      const stripped = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")
-      const parsed = JSON.parse(stripped)
-      if (parsed?.agent?.[agent]?.disable === true) return true
+      if (re.test(raw)) return true
     }
   } catch {}
   return false
