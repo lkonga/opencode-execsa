@@ -61,6 +61,20 @@ function isExecsaEnabled(config: Record<string, string> = readExecsaConfig()): b
   return config.enabled !== "false"
 }
 
+/** swap / opencode.jsonc canonical disable — must match Agent service (drops execsa from Task). */
+function isCanonicalExecsaDisabled(cfg: Config): boolean {
+  const agents = cfg.agent as Record<string, { disable?: boolean }> | undefined
+  return agents?.execsa?.disable === true
+}
+
+/** Runtime gate: execsa-config AND not canonically disabled in merged config. */
+function isExecsaActive(cfg: Config, config: Record<string, string> = readExecsaConfig()): boolean {
+  return isExecsaEnabled(config) && !isCanonicalExecsaDisabled(cfg)
+}
+
+/** Set on each config() pass; inject hooks use this (they do not receive cfg). */
+let execsaMergedActive = false
+
 /** Remove swap/fork-registered execsa* agents and plugin-added task.execsa when disabled. */
 function teardownExecsa(cfg: Config) {
   if (!cfg.agent) return
@@ -105,7 +119,9 @@ export default async () => {
   return {
     config(cfg: Config) {
       const config = readExecsaConfig()
-      if (!isExecsaEnabled(config)) {
+      const active = isExecsaActive(cfg, config)
+      execsaMergedActive = active
+      if (!active) {
         teardownExecsa(cfg)
         return
       }
@@ -165,6 +181,7 @@ export default async () => {
       _input: { sessionID?: string; model: Model },
       output: { system: string[] },
     ) {
+      if (!execsaMergedActive) return
       const config = readExecsaConfig()
       if (!isExecsaEnabled(config)) return
 
@@ -191,6 +208,7 @@ export default async () => {
       _input: {},
       output: { messages: { info: any; parts: any[] }[] },
     ) {
+      if (!execsaMergedActive) return
       const config = readExecsaConfig()
       if (!isExecsaEnabled(config) || config.reminder === "false") return
 

@@ -92,3 +92,46 @@ describe("execsa disabled (enabled=false)", () => {
     expect(output.temperature).toBe(0)
   })
 })
+
+describe("canonical agent.execsa.disable (split-brain fix)", () => {
+  let hooksCanon: any
+
+  beforeAll(async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "execsa-canon-disable-"))
+    process.env.OPENCODE_CONFIG_DIR = dir
+    fs.writeFileSync(
+      path.join(dir, "execsa-config.json"),
+      JSON.stringify({ enabled: "true", reminder: "true" }, null, 2),
+      "utf-8",
+    )
+    const mod = await import(`./index.ts?canon=${dir}`)
+    hooksCanon = await (mod.default as () => Promise<any>)()
+  })
+
+  it("config() tears down when agent.execsa.disable despite enabled=true in execsa-config", () => {
+    const cfg = {
+      agent: {
+        execsa: { disable: true },
+        build: {
+          description: "Build",
+          mode: "subagent" as const,
+          permission: { task: { "*": "allow", execsa: "allow" } },
+        },
+      },
+    }
+    hooksCanon.config(cfg)
+    expect((cfg.agent as any).execsa).toBeUndefined()
+    expect((cfg.agent as any).build.permission.task).toEqual({ "*": "allow" })
+  })
+
+  it("messages.transform skips reminder when canonically disabled", () => {
+    const cfg = { agent: { execsa: { disable: true } } }
+    hooksCanon.config(cfg)
+    const output = { messages: [{ info: { role: "user" }, parts: [{ type: "text", text: "poll again" }] }] }
+    hooksCanon["experimental.chat.messages.transform"]({}, output)
+    const hasReminder = output.messages[0].parts.some((p: any) =>
+      typeof p.text === "string" && p.text.includes("execsaReminder"),
+    )
+    expect(hasReminder).toBe(false)
+  })
+})

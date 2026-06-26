@@ -1,6 +1,6 @@
 {
   "name": "@lkonga/opencode-execsa",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "OpenCode plugin: execsa subagent TUI controls and configuration",
   "type": "module",
   "main": "./tui.ts",

@@ -44,11 +44,13 @@ const SETTINGS: Array<{ key: SettingKey; label: string; type: "toggle" | "model"
 ]
 
 const tui: TuiPlugin = async (api) => {
-  // Activation: user toggled execsa ON via Plugins dialog — enable server side too
+  // Plugins dialog ON: sync execsa-config only if user did not canonically disable via opencode.jsonc
   const cfg = readExecsaConfig()
   if (cfg.enabled !== "true") {
-    writeExecsaConfigVal("enabled", "true")
-    void api.app.reload().catch(() => {})
+    if (!isExecsaCanonicallyDisabledInOpencodeJson()) {
+      writeExecsaConfigVal("enabled", "true")
+      void api.app.reload().catch(() => {})
+    }
     return
   }
 
@@ -70,6 +72,27 @@ const tui: TuiPlugin = async (api) => {
       onSelect: () => showSettings(api),
     },
   ])
+}
+
+function readOpencodeJsonAgentDisable(agent: string): boolean {
+  try {
+    const fs = require("fs")
+    const path = require("path")
+    const dir = process.env.OPENCODE_CONFIG_DIR || path.join(require("os").homedir(), ".config", "opencode")
+    for (const name of ["opencode.jsonc", "opencode.json"]) {
+      const p = path.join(dir, name)
+      if (!fs.existsSync(p)) continue
+      const raw = fs.readFileSync(p, "utf-8")
+      const stripped = raw.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")
+      const parsed = JSON.parse(stripped)
+      if (parsed?.agent?.[agent]?.disable === true) return true
+    }
+  } catch {}
+  return false
+}
+
+function isExecsaCanonicallyDisabledInOpencodeJson(): boolean {
+  return readOpencodeJsonAgentDisable("execsa")
 }
 
 function readExecsaConfig(): Record<string, string> {
