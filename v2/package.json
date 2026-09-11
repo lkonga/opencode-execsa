@@ -1,0 +1,11 @@
+{
+  "name": "@lkonga/opencode-execsa-v2",
+  "private": true,
+  "type": "module",
+  "main": "./backend.ts",
+  "exports": {
+    ".": "./backend.ts",
+    "./backend": "./backend.ts",
+    "./tui": "./tui.tsx"
+  }
+}
