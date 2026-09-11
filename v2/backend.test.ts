@@ -100,7 +100,7 @@ describe("V2 agent transform", () => {
     expect(fixture.agents.get("execsa")).toMatchObject({
       model: { providerID: "provider", id: "model" },
       mode: "subagent",
-      hidden: true,
+      hidden: false,
       steps: 15,
       request: { body: { temperature: 0 } },
     })

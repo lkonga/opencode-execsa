@@ -84,7 +84,7 @@ export function configureAgents(draft: AgentDraft, config: ExecsaConfig) {
     agent.name = "Execsa"
     agent.description = "Execution subagent — runs terminal commands iteratively and returns filtered results."
     agent.mode = "subagent"
-    agent.hidden = true
+    agent.hidden = false
     agent.system = execsaAgentSystem
     agent.steps = config.always_extend === "true" ? 200 : positiveSteps(config.steps, 15)
     agent.request.body.temperature = 0
