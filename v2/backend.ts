@@ -1,4 +1,3 @@
-import { Plugin } from "@opencode-ai/plugin"
 import {
   EXECSA_AGENT,
   EXECSA_SYSTEM_MARKER,
@@ -9,7 +8,7 @@ import {
 } from "./backend-core"
 import { readConfig, readPromptStore, withOptions } from "./config"
 
-export default Plugin.define({
+export default {
   id: "opencode-execsa-v2",
   setup: async (context) => {
     const registrations: Array<{ dispose(): Promise<void> }> = []
@@ -64,4 +63,4 @@ export default Plugin.define({
       for (const registration of registrations.reverse()) await registration.dispose()
     }
   },
-})
+}

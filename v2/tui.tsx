@@ -1,4 +1,4 @@
-import { Plugin } from "@opencode-ai/plugin/tui"
+import { Plugin } from "@opencode/plugin/tui"
 import { readConfig, writeConfigValue } from "./config"
 
 async function settings(context: Plugin.Context) {
