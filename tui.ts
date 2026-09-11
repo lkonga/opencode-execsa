@@ -51,11 +51,6 @@ const tui: TuiPlugin = async (api) => {
   if (cfg.enabled !== "true" && !canonOff) {
     writeExecsaConfigVal("enabled", "true")
     void api.app.reload().catch(() => {})
-  } else if (cfg.enabled !== "true" && canonOff) {
-    api.ui.toast({
-      variant: "warning",
-      message: "Execsa blocked: agent.execsa.disable in opencode.jsonc — remove it to enable execsa",
-    })
   }
 
   // Deactivation: user toggled execsa OFF via Plugins dialog — disable server side too
