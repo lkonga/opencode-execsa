@@ -42,12 +42,13 @@ describe("execsa disable is silent (no startup toast)", () => {
     if (existsSync(v1Tui)) expect(read(v1Tui)).not.toMatch(/variant:\s*["']warning["']/)
   })
 
-  test("the V2 TUI setup registers no toast at startup", () => {
+  test("the V2 TUI setup registers globally with no toast at startup", () => {
     const src = read(join(V2, "tui.tsx"))
     // Toasts are allowed ONLY inside the settings dialog flow. Everything from the
     // Commands component onward must be toast-free, so mounting the plugin cannot toast.
     const startupSection = src.slice(src.indexOf("function Commands"))
     expect(startupSection.length).toBeGreaterThan(0)
+    expect(startupSection).toMatch(/mode:\s*["']global["']/)
     expect(startupSection).not.toContain("toast")
 
     // The plugin definition itself (slot registration) must not toast either.

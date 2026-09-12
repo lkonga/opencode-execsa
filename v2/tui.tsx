@@ -40,6 +40,7 @@ async function settings(context: Plugin.Context) {
 
 function Commands(props: { context: Plugin.Context }) {
   props.context.keymap.layer(() => ({
+    mode: "global",
     commands: [{
       id: "execsa.settings",
       title: "Execsa settings",
